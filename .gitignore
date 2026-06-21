@@ -1,0 +1,48 @@
+# -------------------- Dependencies --------------------
+node_modules/
+orchestrator/node_modules/
+
+# -------------------- Environment Variables (SECRETS) --------------------
+.env
+.env.*
+!.env.example
+
+# -------------------- Logs & Temporary --------------------
+logs/
+*.log
+tmp/
+temp/
+*.tmp
+
+# -------------------- OS Generated --------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -------------------- IDE --------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# -------------------- Build Outputs --------------------
+dist/
+build/
+*.tsbuildinfo
+
+# -------------------- Docker --------------------
+*.dockerignore
+docker-compose.override.yml
+
+# -------------------- Misc --------------------
+*.tgz
+*.gz
+*.zip
+.ftpconfig
+.remote-sync.json
+.eslintcache
+.stylelintcache
+.node_repl_history
+coverage/
+.nyc_output/

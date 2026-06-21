@@ -1,0 +1,40 @@
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    image: adityaisme/orchestrator:latest
+    # No host port exposed – Nginx will handle traffic
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - .env
+    # Optional: override any variable if needed (but we rely on .env)
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - PORT=${PORT}
+      - MONGODB_URI=${MONGODB_URI}
+      - REDIS_URL=${REDIS_URL}
+      - MOCK_IMAGE=${MOCK_IMAGE}
+      - NETWORK_NAME=${NETWORK_NAME}
+      - HOST=${HOST}
+      - SUPPORTED_PROTOCOLS=${SUPPORTED_PROTOCOLS}
+    networks:
+      - mock-network
+    restart: unless-stopped
+
+  nginx:
+    image: openresty/openresty:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+    depends_on:
+      - orchestrator
+    networks:
+      - mock-network
+    restart: unless-stopped
+
+networks:
+  mock-network:
+    driver: bridge

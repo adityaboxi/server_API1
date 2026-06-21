@@ -1,0 +1,7 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY orchestrator/package*.json ./
+RUN npm install --omit=dev --legacy-peer-deps && npm cache clean --force
+COPY orchestrator/ .
+EXPOSE 4000
+CMD ["node", "orchestrator.js"]
