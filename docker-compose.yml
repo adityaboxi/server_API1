@@ -5,11 +5,10 @@ services:
       dockerfile: Dockerfile.orchestrator
     image: adityaisme/orchestrator:latest
     env_file:
-      - .env.production   # 👈 Loads all variables from this file
+      - .env.production
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      # Override or add extra vars if needed (these are already in .env.production)
       - NODE_ENV=production
       - PORT=4000
     networks:

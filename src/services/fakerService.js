@@ -6,9 +6,7 @@ function generateFakeResponse(responseBody) {
       try {
         const fn = new Function('faker', `return (faker.${expr});`);
         let result = fn(faker);
-        if (typeof result === 'function') {
-          result = result();
-        }
+        if (typeof result === 'function') result = result();
         return result !== undefined ? result : match;
       } catch (err) {
         console.error(`[Faker] Error evaluating "faker.${expr}":`, err.message);

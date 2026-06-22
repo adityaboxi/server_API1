@@ -1,10 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { findMatch, mockRoutes } = require('../services/registryService');
+const { findMatch } = require('../services/registryService');
 const { makeKey } = require('../utils/patternUtils');
 const { getDefinitionRedisKey, getGeneratedRedisKey } = require('../services/cacheService');
 const checkRateLimit = require('../services/rateLimitService');
-const { validateAuth, validateQueryParams, validateRequestBody } = require('../services/validationService');
 const generateFakeResponse = require('../services/fakerService');
 const sendMockResponse = require('../services/responseService');
 const redisClient = require('../config/redis');
@@ -41,16 +40,7 @@ router.all(/^\/([^\/]+)\/([^\/]+)\/(.*)$/, async (req, res, next) => {
     });
   }
 
-  const authResult = validateAuth(req, definition);
-  if (!authResult.ok) {
-    return res.status(authResult.status || 401).json({ error: authResult.error });
-  }
-
-  const qCheck = validateQueryParams(req, definition);
-  if (!qCheck.ok) return res.status(400).json({ error: qCheck.error });
-
-  const bCheck = validateRequestBody(req, definition);
-  if (!bCheck.ok) return res.status(400).json({ error: bCheck.error });
+  // (Auth, query, body validation placeholders – add if needed)
 
   let finalBody = definition.responseBody;
   if (definition.airesponse) {

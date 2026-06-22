@@ -1,5 +1,5 @@
 const ProjectApiHistory = require('../models/ProjectApiHistory');
-const { addDefinitionToMemory } = require('./registryService');
+const { addDefinitionToMemory, mockRoutes } = require('./registryService');
 const redisClient = require('../config/redis');
 const { SUPPORTED_PROTOCOLS } = require('../config/constants');
 const { makeKey } = require('../utils/patternUtils');

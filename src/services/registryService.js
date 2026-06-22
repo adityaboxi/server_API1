@@ -1,20 +1,21 @@
+const redisClient = require('../config/redis');
 const { SUPPORTED_PROTOCOLS } = require('../config/constants');
 const { patternToRegex, makeKey } = require('../utils/patternUtils');
-const { clearGeneratedCache } = require('./cacheService');
-const { getDefinitionRedisKey } = require('./cacheService');
-const redisClient = require('../config/redis');
+const { clearGeneratedCache, getDefinitionRedisKey } = require('./cacheService');
 const { DEFINITION_TTL_SECONDS } = require('../config/constants');
 
 const mockRoutes = new Map();
 
 function addDefinitionToMemory(projectId, version, method, urlpath, apihistorydata) {
+  if (!apihistorydata || !apihistorydata.protocol) {
+    console.warn(`[Memory] Skipping definition (missing protocol):`, { projectId, version, method, urlpath });
+    return;
+  }
   if (!SUPPORTED_PROTOCOLS.includes(apihistorydata.protocol)) {
     console.log(`[Memory] Skipping ${apihistorydata.protocol} (not in supported protocols)`);
     return;
   }
-
   clearGeneratedCache(projectId, version, method, urlpath);
-
   const key = makeKey(projectId, version, method);
   const regexInfo = patternToRegex(urlpath);
   if (!mockRoutes.has(key)) mockRoutes.set(key, []);
@@ -34,7 +35,6 @@ function addDefinitionToMemory(projectId, version, method, urlpath, apihistoryda
 
 function removeDefinitionFromMemory(projectId, version, method, urlpath) {
   clearGeneratedCache(projectId, version, method, urlpath);
-
   const key = makeKey(projectId, version, method);
   const bucket = mockRoutes.get(key);
   if (!bucket) return;
@@ -42,7 +42,6 @@ function removeDefinitionFromMemory(projectId, version, method, urlpath) {
   if (filtered.length === 0) mockRoutes.delete(key);
   else mockRoutes.set(key, filtered);
   console.log(`[Memory] Removed ${method} ${projectId}/${version}${urlpath}`);
-
   const redisKey = getDefinitionRedisKey(projectId, version, method, urlpath);
   redisClient.del(redisKey).catch(err => {
     console.error('[Redis] Failed to delete definition:', err.message);

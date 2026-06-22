@@ -1,10 +1,5 @@
 function sendMockResponse(req, res, definition, finalBody) {
-  const {
-    statusCode,
-    latency,
-    responseHeaders = [],
-    cookies = [],
-  } = definition;
+  const { statusCode, latency, responseHeaders = [], cookies = [] } = definition;
 
   responseHeaders.forEach(({ key, value }) => {
     if (key && value != null) res.set(key, String(value));

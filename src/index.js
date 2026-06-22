@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
 const app = require('./app');
+const mongoose = require('mongoose');
 const { PORT, MONGODB_URI } = require('./config/env');
 const redisClient = require('./config/redis');
 const syncDatabaseDefinitions = require('./services/syncService');
@@ -8,22 +8,9 @@ const { addDefinitionToMemory, removeDefinitionFromMemory } = require('./service
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('[MongoDB] Connected'))
-  .catch(err => {
-    console.error('[MongoDB] Connection error:', err);
-    process.exit(1);
-  });
+  .catch(err => { console.error('[MongoDB] Connection error:', err); process.exit(1); });
 
-const worker = createWorker(
-  {
-    connection: {
-      url: process.env.REDIS_URL || 'redis://localhost:6379',
-      maxRetriesPerRequest: null,
-      enableReadyCheck: false,
-    },
-  },
-  addDefinitionToMemory,
-  removeDefinitionFromMemory
-);
+const worker = createWorker({}, addDefinitionToMemory, removeDefinitionFromMemory);
 
 process.on('SIGINT', async () => {
   console.log('[Server] Shutting down gracefully...');

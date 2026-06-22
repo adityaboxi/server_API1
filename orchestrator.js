@@ -9,14 +9,39 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// -------------------- CONFIGURATION --------------------
+const REDIS_URL = process.env.REDIS_URL || 'redis://host.docker.internal:6379';
+console.log(`[Orchestrator] Using Redis at: ${REDIS_URL}`);
+
 const MONGODB_URI = process.env.MONGODB_URI;
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const MOCK_IMAGE = process.env.MOCK_IMAGE || 'adityaisme/mock:latest';
 const NETWORK_NAME = process.env.NETWORK_NAME || 'mock-network';
 
-mongoose.connect(MONGODB_URI).then(() => console.log('[MongoDB] Connected'));
-const redisClient = redis.createClient({ url: REDIS_URL });
-redisClient.connect().then(() => console.log('[Redis] Connected'));
+// -------------------- DATABASE CONNECTIONS --------------------
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log('[MongoDB] Connected'))
+  .catch(err => console.error('[MongoDB] Connection error:', err.message));
+
+const redisClient = redis.createClient({
+  url: REDIS_URL,
+  socket: {
+    reconnectStrategy: (retries) => {
+      const delay = Math.min(Math.pow(2, retries) * 100, 10000);
+      console.log(`[Redis] Reconnecting in ${delay}ms...`);
+      return delay;
+    },
+  },
+});
+
+redisClient.on('error', (err) => console.error('[Redis] Client error:', err.message));
+redisClient.on('ready', () => console.log('[Redis] Client connected'));
+
+redisClient.connect().catch(err => {
+  console.error('[Redis] Initial connection failed:', err.message);
+});
 
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
@@ -126,15 +151,12 @@ function startProjectWorker() {
     async (job) => {
       const { action, projectId, isActive } = job.data;
       console.log(`[ProjectWorker] Job ${job.id}: action=${action}, projectId=${projectId}, isActive=${isActive}`);
-
       if (!projectId) throw new Error('Missing projectId');
-
       await Project.findOneAndUpdate(
         { id: projectId },
         { $set: { isActive: isActive !== undefined ? isActive : true } },
         { upsert: true }
       );
-
       if (action === 'create') {
         await ensureContainer(projectId);
       } else if (action === 'update') {
@@ -159,11 +181,9 @@ function startProjectWorker() {
       concurrency: 1,
     }
   );
-
   worker.on('completed', (job) => console.log(`[ProjectWorker] Job ${job.id} completed`));
   worker.on('failed', (job, err) => console.error(`[ProjectWorker] Job ${job.id} failed: ${err.message}`));
   worker.on('error', (err) => console.error('[ProjectWorker] Error:', err.message));
-
   return worker;
 }
 
@@ -199,20 +219,21 @@ app.all('/:projectId/*', async (req, res, next) => {
   proxy(req, res, next);
 });
 
+app.use((err, req, res, next) => {
+  console.error('[Orchestrator] Unhandled error:', err.stack);
+  res.status(500).json({ error: 'Internal server error', details: err.message });
+});
+
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
 async function init() {
   await ensureNetwork();
-
-  // Crash recovery: start containers for all active projects
   const allProjects = await Project.find({ isActive: true });
   console.log(`[Init] Found ${allProjects.length} active projects`);
   for (const proj of allProjects) {
     await ensureContainer(proj.id);
   }
-
   const worker = startProjectWorker();
-
   app.listen(PORT, () => {
     console.log(`Orchestrator listening on port ${PORT}`);
     console.log('Project worker started');
