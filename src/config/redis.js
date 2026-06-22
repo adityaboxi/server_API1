@@ -2,10 +2,8 @@ const redis = require('redis');
 const { REDIS_URL } = require('./env');
 
 const redisClient = redis.createClient({
-  url: REDIS_URL,
+  url: REDIS_URL || 'redis://localhost:6379',
   socket: {
-    tls: true,
-    rejectUnauthorized: false,
     reconnectStrategy: (retries) => {
       const delay = Math.min(Math.pow(2, retries) * 100, 10000);
       console.log(`[Redis] Reconnecting in ${delay}ms...`);

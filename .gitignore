@@ -1,41 +1,84 @@
-# -------------------- Dependencies --------------------
+# ============================================================
+# Node.js
+# ============================================================
 node_modules/
 orchestrator/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# -------------------- Environment Variables (SECRETS) --------------------
+# Lockfiles (remove the following lines if you want to commit them)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ============================================================
+# Environment variables (secrets)
+# ============================================================
 .env
 .env.*
 !.env.example
+.env.production.local
+.env.development.local
 
-# -------------------- Logs & Temporary --------------------
+# ============================================================
+# Docker
+# ============================================================
+.dockerignore
+docker-compose.override.yml
+*.dockerignore
+
+# ============================================================
+# Logs & temporary files
+# ============================================================
 logs/
 *.log
 tmp/
 temp/
 *.tmp
+*.pid
+*.seed
 
-# -------------------- OS Generated --------------------
+# ============================================================
+# OS generated
+# ============================================================
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# -------------------- IDE --------------------
+# ============================================================
+# IDE / Editor
+# ============================================================
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.ftptemp
 
-# -------------------- Build Outputs --------------------
+# ============================================================
+# Build outputs
+# ============================================================
 dist/
 build/
+lib-cov/
 *.tsbuildinfo
 
-# -------------------- Docker --------------------
-*.dockerignore
-docker-compose.override.yml
+# ============================================================
+# Test & coverage
+# ============================================================
+coverage/
+.nyc_output/
+__tests__/
+tests/
+*.test.js
+*.spec.js
+jest.config.js
 
-# -------------------- Misc --------------------
+# ============================================================
+# Misc
+# ============================================================
 *.tgz
 *.gz
 *.zip
@@ -44,5 +87,3 @@ docker-compose.override.yml
 .eslintcache
 .stylelintcache
 .node_repl_history
-coverage/
-.nyc_output/

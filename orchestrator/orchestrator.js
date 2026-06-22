@@ -10,26 +10,18 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 const MONGODB_URI = process.env.MONGODB_URI;
-const REDIS_URL = process.env.REDIS_URL;
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const MOCK_IMAGE = process.env.MOCK_IMAGE || 'adityaisme/mock:latest';
 const NETWORK_NAME = process.env.NETWORK_NAME || 'mock-network';
-const SHARED_CONTAINER_NAME = 'shared-mock';
 
-// -------------------------------------------------------------------
-// Database connections
-// -------------------------------------------------------------------
 mongoose.connect(MONGODB_URI).then(() => console.log('[MongoDB] Connected'));
 const redisClient = redis.createClient({ url: REDIS_URL });
 redisClient.connect().then(() => console.log('[Redis] Connected'));
 
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
-// -------------------------------------------------------------------
-// Project model – matches the main backend's 'projects' collection
-// -------------------------------------------------------------------
 const ProjectSchema = new mongoose.Schema({
   id: { type: String, unique: true },
-  subscribed: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
 });
 const Project = mongoose.model('Project', ProjectSchema, 'projects');
@@ -38,9 +30,6 @@ function getContainerName(projectId) {
   return `project-${projectId}`;
 }
 
-// -------------------------------------------------------------------
-// Docker helpers
-// -------------------------------------------------------------------
 async function ensureNetwork() {
   try {
     await docker.getNetwork(NETWORK_NAME).inspect();
@@ -63,7 +52,7 @@ async function ensureContainer(projectId) {
       console.log(`[Docker] Container ${name} already running`);
     }
     return container;
-  } catch (err) {
+  } catch {
     console.log(`[Docker] Container ${name} not found, creating...`);
     await docker.createContainer({
       Image: MOCK_IMAGE,
@@ -101,7 +90,7 @@ async function stopContainer(projectId) {
     } else {
       console.log(`[Docker] Container ${name} already stopped`);
     }
-  } catch (err) {
+  } catch {
     console.log(`[Docker] Container ${name} does not exist (no action)`);
   }
 }
@@ -114,43 +103,8 @@ async function removeContainer(projectId) {
     await container.stop();
     await container.remove();
     console.log(`[Docker] Removed container ${name}`);
-  } catch (err) {
-    console.log(`[Docker] Container ${name} not found or already removed`);
-  }
-}
-
-async function ensureSharedContainer() {
-  console.log('[Docker] Ensuring shared container...');
-  try {
-    const container = docker.getContainer(SHARED_CONTAINER_NAME);
-    const info = await container.inspect();
-    if (!info.State.Running) {
-      await container.start();
-    }
-    console.log('[Docker] Shared container is running');
-    return container;
   } catch {
-    console.log('[Docker] Shared container not found, creating...');
-    await docker.createContainer({
-      Image: MOCK_IMAGE,
-      name: SHARED_CONTAINER_NAME,
-      Env: [
-        `MONGODB_URI=${MONGODB_URI}`,
-        `REDIS_URL=${REDIS_URL}`,
-        `HOST=${process.env.HOST || 'http://localhost:4000'}`,
-        `SUPPORTED_PROTOCOLS=${process.env.SUPPORTED_PROTOCOLS || 'http'}`,
-        `NODE_ENV=${process.env.NODE_ENV || 'production'}`,
-      ],
-      HostConfig: {
-        NetworkMode: NETWORK_NAME,
-        RestartPolicy: { Name: 'unless-stopped' },
-      },
-      ExposedPorts: { '4000/tcp': {} },
-    });
-    const container = docker.getContainer(SHARED_CONTAINER_NAME);
-    await container.start();
-    console.log('[Docker] Shared container started');
-    return container;
+    console.log(`[Docker] Container ${name} not found or already removed`);
   }
 }
 
@@ -166,50 +120,25 @@ function createProjectProxy(target) {
   });
 }
 
-// -------------------------------------------------------------------
-// BullMQ Worker for project jobs
-// -------------------------------------------------------------------
 function startProjectWorker() {
   const worker = new Worker(
     'projectQueue',
     async (job) => {
-      const { action, projectId, subscribed, isActive } = job.data;
-      console.log(`[ProjectWorker] Job ${job.id}: action=${action}, projectId=${projectId}, subscribed=${subscribed}, isActive=${isActive}`);
+      const { action, projectId, isActive } = job.data;
+      console.log(`[ProjectWorker] Job ${job.id}: action=${action}, projectId=${projectId}, isActive=${isActive}`);
 
-      if (!projectId) {
-        throw new Error('Missing projectId');
-      }
+      if (!projectId) throw new Error('Missing projectId');
 
-      // Update orchestrator's local DB record
       await Project.findOneAndUpdate(
         { id: projectId },
-        { 
-          $set: {
-            subscribed: subscribed !== undefined ? subscribed : false,
-            isActive: isActive !== undefined ? isActive : true,
-          }
-        },
+        { $set: { isActive: isActive !== undefined ? isActive : true } },
         { upsert: true }
       );
 
-      if (action === 'create' || action === 'update') {
-        const project = await Project.findOne({ id: projectId });
-        if (!project) return;
-
-        // ✅ Container only created if subscribed AND active.
-        // Unsubscribe removes the container (if exists) and ensures shared.
-        if (project.subscribed && project.isActive) {
-          await ensureContainer(projectId);
-        } else {
-          await removeContainer(projectId);
-          await ensureSharedContainer();
-        }
-      } else if (action === 'toggle') {
-        // 🔥 Toggle only changes container state based on isActive, not subscription.
-        const targetActive = isActive !== undefined ? isActive : true;
-        console.log(`[ProjectWorker] Toggle: setting isActive=${targetActive} for project ${projectId}`);
-
-        if (targetActive) {
+      if (action === 'create') {
+        await ensureContainer(projectId);
+      } else if (action === 'update') {
+        if (isActive) {
           await ensureContainer(projectId);
         } else {
           await stopContainer(projectId);
@@ -226,10 +155,6 @@ function startProjectWorker() {
         url: REDIS_URL,
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
-        socket: {
-          tls: true,
-          rejectUnauthorized: false,
-        },
       },
       concurrency: 1,
     }
@@ -242,87 +167,48 @@ function startProjectWorker() {
   return worker;
 }
 
-// -------------------------------------------------------------------
-// ROUTES
-// -------------------------------------------------------------------
-
 app.get('/health', (req, res) => res.json({ status: 'OK' }));
 
 app.post('/api/projects', async (req, res) => {
-  const { projectId, subscribed } = req.body;
-  await Project.findOneAndUpdate(
-    { id: projectId },
-    { subscribed: subscribed || false, isActive: true },
-    { upsert: true }
-  );
-  const project = await Project.findOne({ id: projectId });
-  if (project.subscribed && project.isActive) {
-    await ensureContainer(projectId);
-  } else {
-    await removeContainer(projectId);
-    await ensureSharedContainer();
-  }
+  const { projectId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'Missing projectId' });
+  await Project.findOneAndUpdate({ id: projectId }, { isActive: true }, { upsert: true });
+  await ensureContainer(projectId);
   res.json({ success: true });
 });
 
 app.get('/api/routing/:projectId', async (req, res) => {
   const { projectId } = req.params;
   const project = await Project.findOne({ id: projectId });
-  const isSubscribed = project ? project.subscribed : false;
-  const isActive = project ? project.isActive : false;
-
-  let target;
-  if (isSubscribed && isActive) {
-    await ensureContainer(projectId);
-    target = `http://${getContainerName(projectId)}:4000`;
-  } else {
-    await ensureSharedContainer();
-    target = `http://${SHARED_CONTAINER_NAME}:4000`;
+  if (!project || !project.isActive) {
+    return res.status(404).json({ error: 'Project not found or inactive' });
   }
-
-  res.json({ target });
+  await ensureContainer(projectId);
+  res.json({ target: `http://${getContainerName(projectId)}:4000` });
 });
 
 app.all('/:projectId/*', async (req, res, next) => {
   const { projectId } = req.params;
   const project = await Project.findOne({ id: projectId });
-  const isSubscribed = project ? project.subscribed : false;
-  const isActive = project ? project.isActive : false;
-
-  let target;
-  if (isSubscribed && isActive) {
-    await ensureContainer(projectId);
-    target = `http://${getContainerName(projectId)}:4000`;
-  } else {
-    await ensureSharedContainer();
-    target = `http://${SHARED_CONTAINER_NAME}:4000`;
+  if (!project || !project.isActive) {
+    return res.status(404).json({ error: 'Project not found or inactive' });
   }
-
+  await ensureContainer(projectId);
+  const target = `http://${getContainerName(projectId)}:4000`;
   const proxy = createProjectProxy(target);
   proxy(req, res, next);
 });
 
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not found' });
-});
+app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
-// -------------------------------------------------------------------
-// INIT – full reconciliation on startup
-// -------------------------------------------------------------------
 async function init() {
   await ensureNetwork();
-  await ensureSharedContainer();
 
-  const allProjects = await Project.find({});
-  console.log(`[Init] Found ${allProjects.length} projects in DB`);
-
+  // Crash recovery: start containers for all active projects
+  const allProjects = await Project.find({ isActive: true });
+  console.log(`[Init] Found ${allProjects.length} active projects`);
   for (const proj of allProjects) {
-    if (proj.subscribed && proj.isActive) {
-      await ensureContainer(proj.id);
-      console.log(`[Init] Dedicated container ensured for ${proj.id}`);
-    } else {
-      await removeContainer(proj.id);
-    }
+    await ensureContainer(proj.id);
   }
 
   const worker = startProjectWorker();

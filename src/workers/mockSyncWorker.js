@@ -17,7 +17,14 @@ function createWorker(connectionOpts, addFn, removeFn) {
         throw new Error(`Unknown action: ${action}`);
       }
     },
-    connectionOpts
+    {
+      connection: {
+        url: process.env.REDIS_URL || 'redis://localhost:6379',
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+      },
+      ...connectionOpts,
+    }
   );
 
   worker.on('completed', (job) => console.log(`[Worker] Job ${job.id} completed`));

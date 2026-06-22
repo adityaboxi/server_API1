@@ -4,21 +4,14 @@ services:
       context: .
       dockerfile: Dockerfile.orchestrator
     image: adityaisme/orchestrator:latest
-    # No host port exposed – Nginx will handle traffic
+    env_file:
+      - .env.production   # 👈 Loads all variables from this file
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    env_file:
-      - .env
-    # Optional: override any variable if needed (but we rely on .env)
     environment:
-      - NODE_ENV=${NODE_ENV}
-      - PORT=${PORT}
-      - MONGODB_URI=${MONGODB_URI}
-      - REDIS_URL=${REDIS_URL}
-      - MOCK_IMAGE=${MOCK_IMAGE}
-      - NETWORK_NAME=${NETWORK_NAME}
-      - HOST=${HOST}
-      - SUPPORTED_PROTOCOLS=${SUPPORTED_PROTOCOLS}
+      # Override or add extra vars if needed (these are already in .env.production)
+      - NODE_ENV=production
+      - PORT=4000
     networks:
       - mock-network
     restart: unless-stopped

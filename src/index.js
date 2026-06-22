@@ -16,14 +16,9 @@ mongoose.connect(MONGODB_URI)
 const worker = createWorker(
   {
     connection: {
-      url: process.env.REDIS_URL,
+      url: process.env.REDIS_URL || 'redis://localhost:6379',
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
-      socket: {
-        tls: true,
-        rejectUnauthorized: false,
-        reconnectStrategy: (retries) => Math.min(2 ** retries * 100, 10000),
-      },
     },
   },
   addDefinitionToMemory,
