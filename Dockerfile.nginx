@@ -1,0 +1,10 @@
+FROM openresty/openresty:alpine
+
+RUN apk add --no-cache curl && \
+    mkdir -p /usr/local/openresty/lualib/resty && \
+    curl -o /usr/local/openresty/lualib/resty/http.lua \
+    https://raw.githubusercontent.com/ledgetech/lua-resty-http/master/lib/resty/http.lua && \
+    curl -o /usr/local/openresty/lualib/resty/http_headers.lua \
+    https://raw.githubusercontent.com/ledgetech/lua-resty-http/master/lib/resty/http_headers.lua && \
+    curl -o /usr/local/openresty/lualib/resty/http_connect.lua \
+    https://raw.githubusercontent.com/ledgetech/lua-resty-http/master/lib/resty/http_connect.lua

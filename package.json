@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Docker container orchestrator for mock projects",
   "main": "orchestrator.js",
+  "scripts": {
+    "start": "node orchestrator.js",
+    "dev": "nodemon orchestrator.js"
+  },
   "dependencies": {
     "bullmq": "^5.0.0",
     "dockerode": "^4.0.0",
@@ -12,7 +16,7 @@
     "mongoose": "^8.0.0",
     "redis": "^4.6.5"
   },
-  "scripts": {
-    "start": "node orchestrator.js"
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   }
 }

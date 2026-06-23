@@ -5,24 +5,27 @@ function createWorker(connectionOpts, addFn, removeFn) {
     'mockSyncQueue',
     async (job) => {
       const { action, projectId, version, method, urlpath, apihistorydata } = job.data;
+
       if (!projectId || !version || !method || !urlpath) {
         throw new Error(`Job ${job.id} missing required fields`);
       }
+
       if (action === 'set') {
         if (!apihistorydata) throw new Error(`Job ${job.id} missing apihistorydata`);
-        addFn(projectId, version, method, urlpath, apihistorydata);
+        await addFn(projectId, version, method, urlpath, apihistorydata);
       } else if (action === 'delete') {
-        removeFn(projectId, version, method, urlpath);
+        await removeFn(projectId, version, method, urlpath);
       } else {
         throw new Error(`Unknown action: ${action}`);
       }
     },
     {
       connection: {
-        url: process.env.REDIS_URL || 'redis://localhost:6379',
+        url: process.env.REDIS_URL,
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
       },
+      concurrency: 1,
       ...connectionOpts,
     }
   );

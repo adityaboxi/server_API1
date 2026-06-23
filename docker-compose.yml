@@ -5,18 +5,22 @@ services:
       dockerfile: Dockerfile.orchestrator
     image: adityaisme/orchestrator:latest
     env_file:
-      - .env.production
+      - .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
       - PORT=4000
+    ports:
+      - "4000:4000"
     networks:
       - mock-network
     restart: unless-stopped
 
   nginx:
-    image: openresty/openresty:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
     ports:
       - "80:80"
     volumes:

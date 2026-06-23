@@ -7,15 +7,27 @@ const { Worker } = require('bullmq');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT;
 
 // -------------------- CONFIGURATION --------------------
-const REDIS_URL = process.env.REDIS_URL || 'redis://host.docker.internal:6379';
-console.log(`[Orchestrator] Using Redis at: ${REDIS_URL}`);
-
+const REDIS_URL = process.env.REDIS_URL;
 const MONGODB_URI = process.env.MONGODB_URI;
-const MOCK_IMAGE = process.env.MOCK_IMAGE || 'adityaisme/mock:latest';
-const NETWORK_NAME = process.env.NETWORK_NAME || 'mock-network';
+const MOCK_IMAGE = process.env.MOCK_IMAGE;
+const NETWORK_NAME = process.env.NETWORK_NAME;
+const HOST = process.env.HOST;
+const SUPPORTED_PROTOCOLS = process.env.SUPPORTED_PROTOCOLS;
+const NODE_ENV = process.env.NODE_ENV;
+
+if (!PORT) throw new Error('PORT env is not set');
+if (!REDIS_URL) throw new Error('REDIS_URL env is not set');
+if (!MONGODB_URI) throw new Error('MONGODB_URI env is not set');
+if (!MOCK_IMAGE) throw new Error('MOCK_IMAGE env is not set');
+if (!NETWORK_NAME) throw new Error('NETWORK_NAME env is not set');
+if (!HOST) throw new Error('HOST env is not set');
+if (!SUPPORTED_PROTOCOLS) throw new Error('SUPPORTED_PROTOCOLS env is not set');
+if (!NODE_ENV) throw new Error('NODE_ENV env is not set');
+
+console.log(`[Orchestrator] Using Redis at: ${REDIS_URL}`);
 
 // -------------------- DATABASE CONNECTIONS --------------------
 mongoose.connect(MONGODB_URI, {
@@ -64,6 +76,29 @@ async function ensureNetwork() {
   }
 }
 
+async function createContainer(projectId) {
+  const name = getContainerName(projectId);
+  await docker.createContainer({
+    Image: MOCK_IMAGE,
+    name,
+    Env: [
+      `PROJECT_ID=${projectId}`,
+      `MONGODB_URI=${MONGODB_URI}`,
+      `REDIS_URL=${REDIS_URL}`,
+      `HOST=${HOST}`,
+      `SUPPORTED_PROTOCOLS=${SUPPORTED_PROTOCOLS}`,
+      `NODE_ENV=${NODE_ENV}`,
+    ],
+    HostConfig: {
+      NetworkMode: NETWORK_NAME,
+      RestartPolicy: { Name: 'unless-stopped' },
+    },
+    ExposedPorts: { '4000/tcp': {} },
+  });
+  console.log(`[Docker] Created container ${name}`);
+  return docker.getContainer(name);
+}
+
 async function ensureContainer(projectId) {
   const name = getContainerName(projectId);
   console.log(`[Docker] Ensuring container ${name}...`);
@@ -79,24 +114,7 @@ async function ensureContainer(projectId) {
     return container;
   } catch {
     console.log(`[Docker] Container ${name} not found, creating...`);
-    await docker.createContainer({
-      Image: MOCK_IMAGE,
-      name,
-      Env: [
-        `PROJECT_ID=${projectId}`,
-        `MONGODB_URI=${MONGODB_URI}`,
-        `REDIS_URL=${REDIS_URL}`,
-        `HOST=${process.env.HOST || 'http://localhost:4000'}`,
-        `SUPPORTED_PROTOCOLS=${process.env.SUPPORTED_PROTOCOLS || 'http'}`,
-        `NODE_ENV=${process.env.NODE_ENV || 'production'}`,
-      ],
-      HostConfig: {
-        NetworkMode: NETWORK_NAME,
-        RestartPolicy: { Name: 'unless-stopped' },
-      },
-      ExposedPorts: { '4000/tcp': {} },
-    });
-    const container = docker.getContainer(name);
+    const container = await createContainer(projectId);
     await container.start();
     console.log(`[Docker] Created and started new container ${name}`);
     return container;
@@ -125,7 +143,8 @@ async function removeContainer(projectId) {
   console.log(`[Docker] Removing container ${name}...`);
   try {
     const container = docker.getContainer(name);
-    await container.stop();
+    const info = await container.inspect();
+    if (info.State.Running) await container.stop();
     await container.remove();
     console.log(`[Docker] Removed container ${name}`);
   } catch {
@@ -200,12 +219,18 @@ app.post('/api/projects', async (req, res) => {
 app.get('/api/routing/:projectId', async (req, res) => {
   const { projectId } = req.params;
   const project = await Project.findOne({ id: projectId });
-  if (!project || !project.isActive) {
-    return res.status(404).json({ error: 'Project not found or inactive' });
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+  if (!project.isActive) {
+    return res.status(403).json({ error: 'Project is inactive. Please activate it to use the API.' });
   }
   await ensureContainer(projectId);
   res.json({ target: `http://${getContainerName(projectId)}:4000` });
 });
+
+
+
 
 app.all('/:projectId/*', async (req, res, next) => {
   const { projectId } = req.params;
@@ -228,15 +253,49 @@ app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
 async function init() {
   await ensureNetwork();
-  const allProjects = await Project.find({ isActive: true });
-  console.log(`[Init] Found ${allProjects.length} active projects`);
+
+  const allProjects = await Project.find({});
+  console.log(`[Init] Found ${allProjects.length} total projects`);
+
   for (const proj of allProjects) {
-    await ensureContainer(proj.id);
+    try {
+      const name = getContainerName(proj.id);
+      let containerExists = false;
+
+      try {
+        await docker.getContainer(name).inspect();
+        containerExists = true;
+      } catch {
+        containerExists = false;
+      }
+
+      if (!containerExists) {
+        await createContainer(proj.id);
+        console.log(`[Init] Created container ${name}`);
+      }
+
+      const container = docker.getContainer(name);
+      const info = await container.inspect();
+
+      if (proj.isActive && !info.State.Running) {
+        await container.start();
+        console.log(`[Init] Started container ${name}`);
+      } else if (!proj.isActive && info.State.Running) {
+        await container.stop();
+        console.log(`[Init] Stopped container ${name} (isActive=false)`);
+      } else {
+        console.log(`[Init] Container ${name} already in correct state`);
+      }
+
+    } catch (err) {
+      console.error(`[Init] Error handling project ${proj.id}:`, err.message);
+    }
   }
-  const worker = startProjectWorker();
+
+  startProjectWorker();
   app.listen(PORT, () => {
-    console.log(`Orchestrator listening on port ${PORT}`);
-    console.log('Project worker started');
+    console.log(`[Orchestrator] Listening on port ${PORT}`);
+    console.log('[Orchestrator] Project worker started');
   });
 }
 

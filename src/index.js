@@ -6,6 +6,9 @@ const syncDatabaseDefinitions = require('./services/syncService');
 const { createWorker } = require('./workers/mockSyncWorker');
 const { addDefinitionToMemory, removeDefinitionFromMemory } = require('./services/registryService');
 
+if (!PORT) throw new Error('PORT env is not set');
+if (!MONGODB_URI) throw new Error('MONGODB_URI env is not set');
+
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('[MongoDB] Connected'))
   .catch(err => { console.error('[MongoDB] Connection error:', err); process.exit(1); });
@@ -23,12 +26,20 @@ process.on('SIGINT', async () => {
 process.on('uncaughtException', (err) => {
   console.error('[Uncaught Exception]', err.message);
 });
+
 process.on('unhandledRejection', (reason) => {
   console.error('[Unhandled Rejection]', reason);
 });
 
 app.listen(PORT, async () => {
   console.log(`[Mock Server] listening on port ${PORT}`);
-  await syncDatabaseDefinitions();
-  console.log('[Mock Server] Ready.');
+  redisClient.on('ready', async () => {
+    await syncDatabaseDefinitions();
+    console.log('[Mock Server] Ready.');
+  });
+  // fallback if already ready
+  if (redisClient.isReady) {
+    await syncDatabaseDefinitions();
+    console.log('[Mock Server] Ready.');
+  }
 });

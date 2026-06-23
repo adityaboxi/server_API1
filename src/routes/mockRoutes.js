@@ -6,6 +6,7 @@ const { getDefinitionRedisKey, getGeneratedRedisKey } = require('../services/cac
 const checkRateLimit = require('../services/rateLimitService');
 const generateFakeResponse = require('../services/fakerService');
 const sendMockResponse = require('../services/responseService');
+const { validateQueryParams, validateRequestBody, validateAuth } = require('../services/validationService');
 const redisClient = require('../config/redis');
 const { DEFINITION_TTL_SECONDS, GENERATED_RESPONSE_TTL_SECONDS } = require('../config/constants');
 
@@ -27,6 +28,25 @@ router.all(/^\/([^\/]+)\/([^\/]+)\/(.*)$/, async (req, res, next) => {
     console.error('[Redis] Failed to refresh TTL:', err.message);
   });
 
+  // ✅ Auth validation
+  const authResult = validateAuth(req, definition);
+  if (!authResult.ok) {
+    return res.status(authResult.status || 401).json({ error: authResult.error });
+  }
+
+  // ✅ Query param validation
+  const queryResult = validateQueryParams(req, definition);
+  if (!queryResult.ok) {
+    return res.status(400).json({ error: queryResult.error });
+  }
+
+  // ✅ Request body validation
+  const bodyResult = validateRequestBody(req, definition);
+  if (!bodyResult.ok) {
+    return res.status(400).json({ error: bodyResult.error });
+  }
+
+  // Rate limit
   const rl = await checkRateLimit(routeKey, clientId, definition.rateLimit);
   if (rl.limit !== undefined) {
     res.set('X-RateLimit-Limit', String(rl.limit));
@@ -39,8 +59,6 @@ router.all(/^\/([^\/]+)\/([^\/]+)\/(.*)$/, async (req, res, next) => {
       retryAfterSeconds: Math.ceil(rl.resetIn / 1000),
     });
   }
-
-  // (Auth, query, body validation placeholders – add if needed)
 
   let finalBody = definition.responseBody;
   if (definition.airesponse) {
