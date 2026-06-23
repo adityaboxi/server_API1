@@ -31,15 +31,20 @@ process.on('unhandledRejection', (reason) => {
   console.error('[Unhandled Rejection]', reason);
 });
 
-app.listen(PORT, async () => {
+let synced = false; // ✅ prevent double sync
+
+async function startSync() {
+  if (synced) return;
+  synced = true;
+  await syncDatabaseDefinitions();
+  console.log('[Mock Server] Ready.');
+}
+
+app.listen(PORT, '0.0.0.0', ()=>{
   console.log(`[Mock Server] listening on port ${PORT}`);
-  redisClient.on('ready', async () => {
-    await syncDatabaseDefinitions();
-    console.log('[Mock Server] Ready.');
-  });
-  // fallback if already ready
   if (redisClient.isReady) {
-    await syncDatabaseDefinitions();
-    console.log('[Mock Server] Ready.');
+    startSync();
+  } else {
+    redisClient.once('ready', startSync); // ✅ once not on
   }
 });

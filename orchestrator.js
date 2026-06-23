@@ -7,9 +7,9 @@ const { Worker } = require('bullmq');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT;
 
 // -------------------- CONFIGURATION --------------------
+const PORT = process.env.PORT;
 const REDIS_URL = process.env.REDIS_URL;
 const MONGODB_URI = process.env.MONGODB_URI;
 const MOCK_IMAGE = process.env.MOCK_IMAGE;
@@ -17,6 +17,7 @@ const NETWORK_NAME = process.env.NETWORK_NAME;
 const HOST = process.env.HOST;
 const SUPPORTED_PROTOCOLS = process.env.SUPPORTED_PROTOCOLS;
 const NODE_ENV = process.env.NODE_ENV;
+const MOCK_PORT = process.env.MOCK_PORT;
 
 if (!PORT) throw new Error('PORT env is not set');
 if (!REDIS_URL) throw new Error('REDIS_URL env is not set');
@@ -26,14 +27,12 @@ if (!NETWORK_NAME) throw new Error('NETWORK_NAME env is not set');
 if (!HOST) throw new Error('HOST env is not set');
 if (!SUPPORTED_PROTOCOLS) throw new Error('SUPPORTED_PROTOCOLS env is not set');
 if (!NODE_ENV) throw new Error('NODE_ENV env is not set');
+if (!MOCK_PORT) throw new Error('MOCK_PORT env is not set');
 
 console.log(`[Orchestrator] Using Redis at: ${REDIS_URL}`);
 
 // -------------------- DATABASE CONNECTIONS --------------------
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(MONGODB_URI)
   .then(() => console.log('[MongoDB] Connected'))
   .catch(err => console.error('[MongoDB] Connection error:', err.message));
 
@@ -88,12 +87,13 @@ async function createContainer(projectId) {
       `HOST=${HOST}`,
       `SUPPORTED_PROTOCOLS=${SUPPORTED_PROTOCOLS}`,
       `NODE_ENV=${NODE_ENV}`,
+      `PORT=${MOCK_PORT}`,
     ],
     HostConfig: {
       NetworkMode: NETWORK_NAME,
       RestartPolicy: { Name: 'unless-stopped' },
     },
-    ExposedPorts: { '4000/tcp': {} },
+    ExposedPorts: { [`${MOCK_PORT}/tcp`]: {} },
   });
   console.log(`[Docker] Created container ${name}`);
   return docker.getContainer(name);
@@ -206,6 +206,8 @@ function startProjectWorker() {
   return worker;
 }
 
+app.use(express.json());
+
 app.get('/health', (req, res) => res.json({ status: 'OK' }));
 
 app.post('/api/projects', async (req, res) => {
@@ -226,11 +228,8 @@ app.get('/api/routing/:projectId', async (req, res) => {
     return res.status(403).json({ error: 'Project is inactive. Please activate it to use the API.' });
   }
   await ensureContainer(projectId);
-  res.json({ target: `http://${getContainerName(projectId)}:4000` });
+  res.json({ target: `http://${getContainerName(projectId)}:${MOCK_PORT}` });
 });
-
-
-
 
 app.all('/:projectId/*', async (req, res, next) => {
   const { projectId } = req.params;
@@ -239,7 +238,7 @@ app.all('/:projectId/*', async (req, res, next) => {
     return res.status(404).json({ error: 'Project not found or inactive' });
   }
   await ensureContainer(projectId);
-  const target = `http://${getContainerName(projectId)}:4000`;
+  const target = `http://${getContainerName(projectId)}:${MOCK_PORT}`;
   const proxy = createProjectProxy(target);
   proxy(req, res, next);
 });

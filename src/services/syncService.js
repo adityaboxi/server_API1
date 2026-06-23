@@ -9,28 +9,16 @@ const PROJECT_ID = process.env.PROJECT_ID;
 async function syncDatabaseDefinitions() {
   // Load from MongoDB
   try {
-    const docs = await ProjectApiHistory.find({});
+    const filter = PROJECT_ID ? { projectID: PROJECT_ID } : {};
+    const docs = await ProjectApiHistory.find(filter);
     let count = 0;
 
     for (const doc of docs) {
+      const projectId = doc.projectID; // ✅ now always custom id
       for (const endpoint of doc.endpoints) {
         const baseUrlPath = endpoint.baseUrlPath;
         for (const ver of endpoint.versions) {
           if (!SUPPORTED_PROTOCOLS.includes(ver.protocol)) continue;
-
-          // Use projectID from actualFullUrl to extract custom project id
-          // actualFullUrl format: protocol://host/customProjectId/version/path
-          let projectId = doc.projectID;
-          if (ver.actualFullUrl) {
-            try {
-              const urlParts = ver.actualFullUrl.split('/');
-              // http://host/projectId/version/path → index 3
-              if (urlParts.length >= 4) projectId = urlParts[3];
-            } catch {}
-          }
-
-          // If PROJECT_ID env is set, only load matching project
-          if (PROJECT_ID && projectId !== PROJECT_ID) continue;
 
           const apiData = {
             protocol: ver.protocol,

@@ -11,11 +11,14 @@ function addDefinitionToMemory(projectId, version, method, urlpath, apihistoryda
     console.warn(`[Memory] Skipping definition (missing protocol):`, { projectId, version, method, urlpath });
     return;
   }
-  if (!SUPPORTED_PROTOCOLS.includes(apihistorydata.protocol)) {
+
+  if (SUPPORTED_PROTOCOLS && !SUPPORTED_PROTOCOLS.includes(apihistorydata.protocol)) {
     console.log(`[Memory] Skipping ${apihistorydata.protocol} (not in supported protocols)`);
     return;
   }
+
   clearGeneratedCache(projectId, version, method, urlpath);
+
   const key = makeKey(projectId, version, method);
   const regexInfo = patternToRegex(urlpath);
   if (!mockRoutes.has(key)) mockRoutes.set(key, []);
@@ -24,6 +27,7 @@ function addDefinitionToMemory(projectId, version, method, urlpath, apihistoryda
   const entry = { urlPath: urlpath, apihistorydata, regexInfo };
   if (idx !== -1) bucket[idx] = entry;
   else bucket.push(entry);
+
   console.log(`[Memory] ${method} ${projectId}/${version}${urlpath} ${idx === -1 ? 'added' : 'updated'}`);
 
   const redisKey = getDefinitionRedisKey(projectId, version, method, urlpath);
@@ -35,13 +39,17 @@ function addDefinitionToMemory(projectId, version, method, urlpath, apihistoryda
 
 function removeDefinitionFromMemory(projectId, version, method, urlpath) {
   clearGeneratedCache(projectId, version, method, urlpath);
+
   const key = makeKey(projectId, version, method);
   const bucket = mockRoutes.get(key);
   if (!bucket) return;
+
   const filtered = bucket.filter(d => d.urlPath !== urlpath);
   if (filtered.length === 0) mockRoutes.delete(key);
   else mockRoutes.set(key, filtered);
+
   console.log(`[Memory] Removed ${method} ${projectId}/${version}${urlpath}`);
+
   const redisKey = getDefinitionRedisKey(projectId, version, method, urlpath);
   redisClient.del(redisKey).catch(err => {
     console.error('[Redis] Failed to delete definition:', err.message);
@@ -52,6 +60,7 @@ function findMatch(projectId, version, method, requestPath) {
   const key = makeKey(projectId, version, method);
   const bucket = mockRoutes.get(key);
   if (!bucket) return null;
+
   for (const def of bucket) {
     const match = requestPath.match(def.regexInfo.regex);
     if (match) {
